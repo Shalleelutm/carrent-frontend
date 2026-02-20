@@ -1,0 +1,56 @@
+[
+  {
+    "id": "swift",
+    "name": "Suzuki Swift",
+    "category": "Economy",
+    "transmission": "Auto",
+    "seats": 5,
+    "pricePerDayMUR": 1500,
+    "image": ""
+  },
+  {
+    "id": "sportage",
+    "name": "Kia Sportage",
+    "category": "SUV",
+    "transmission": "Auto",
+    "seats": 5,
+    "pricePerDayMUR": 2800,
+    "image": ""
+  },
+  {
+    "id": "corolla",
+    "name": "Toyota Corolla",
+    "category": "Sedan",
+    "transmission": "Auto",
+    "seats": 5,
+    "pricePerDayMUR": 2300,
+    "image": ""
+  },
+  {
+    "id": "rav4",
+    "name": "Toyota RAV4",
+    "category": "SUV",
+    "transmission": "Auto",
+    "seats": 5,
+    "pricePerDayMUR": 3200,
+    "image": ""
+  },
+  {
+    "id": "yaris",
+    "name": "Toyota Yaris",
+    "category": "Economy",
+    "transmission": "Manual",
+    "seats": 5,
+    "pricePerDayMUR": 1300,
+    "image": ""
+  },
+  {
+    "id": "i10",
+    "name": "Hyundai i10",
+    "category": "Economy",
+    "transmission": "Auto",
+    "seats": 5,
+    "pricePerDayMUR": 1200,
+    "image": ""
+  }
+]
