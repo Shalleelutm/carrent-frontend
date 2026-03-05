@@ -1,178 +1,108 @@
-import { useEffect, useState } from "react";
-import {
-  getTickets,
-  addTicket,
-  updateTicket,
-  Ticket,
-} from "../lib/storage";
+import React, { useState } from "react";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { api } from "@/lib/api";
+import { Button } from "@/components/ui/button";
 
 export default function Support() {
-  const [tickets, setTickets] = useState<Ticket[]>([]);
-  const [selected, setSelected] = useState<string | null>(null);
+  const [subject, setSubject] = useState("");
+  const [message, setMessage] = useState("");
+  const [priority, setPriority] = useState<"low" | "normal" | "high" | "urgent">("normal");
 
-  useEffect(() => {
-    setTickets(getTickets());
-  }, []);
+  const ticketsQ = useQuery({
+    queryKey: ["my-tickets"],
+    queryFn: async () => {
+      const { data } = await api.get("/support/tickets");
+      return data as any[];
+    },
+  });
 
-  function waLink(phone: string, text: string): string {
-    return `https://wa.me/${phone}?text=${encodeURIComponent(text)}`;
-  }
-
-  function createTicket(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-
-    const ticket: Ticket = {
-      ticketNumber: "T-" + Date.now(),
-      userEmail: "guest@user.com",
-      subject: "General Support",
-      status: "Open",
-      messages: [
-        {
-          sender: "customer",
-          text: "Initial request",
-          date: new Date().toISOString(),
-        },
-      ],
-    };
-
-    addTicket(ticket);
-    setTickets(getTickets());
-  }
-
-  function adminReply(
-    ticketNumber: string,
-    text: string,
-    nextStatus: string
-  ) {
-    const current = getTickets().find(
-      (t) => t.ticketNumber === ticketNumber
-    );
-    if (!current) return;
-
-    const updated: Partial<Ticket> = {
-      status: nextStatus,
-      messages: [
-        ...current.messages,
-        {
-          sender: "admin",
-          text,
-          date: new Date().toISOString(),
-        },
-      ],
-    };
-
-    updateTicket(ticketNumber, updated);
-    setTickets(getTickets());
-  }
-
-  const activeTicket =
-    selected &&
-    tickets.find((t) => t.ticketNumber === selected);
+  const createMut = useMutation({
+    mutationFn: async () => {
+      const { data } = await api.post("/support/tickets", {
+        subject,
+        message,
+        priority,
+      });
+      return data;
+    },
+    onSuccess: async () => {
+      setSubject("");
+      setMessage("");
+      setPriority("normal");
+      await ticketsQ.refetch();
+      alert("Ticket created");
+    },
+  });
 
   return (
-    <div className="min-h-screen bg-black text-white p-10">
-      <div className="max-w-6xl mx-auto grid grid-cols-2 gap-10">
-        <div>
-          <h1 className="text-3xl font-black mb-6">Support Tickets</h1>
+    <div className="p-10 space-y-8 max-w-3xl">
+      <div>
+        <div className="text-2xl font-black">Support</div>
+        <div className="text-sm text-black/50">Open a ticket and our admin will reply.</div>
+      </div>
 
-          <form onSubmit={createTicket} className="mb-6">
-            <button className="bg-blue-600 px-4 py-2 rounded">
-              Create Demo Ticket
-            </button>
-          </form>
+      <div className="border rounded-2xl p-6 bg-white space-y-3">
+        <div className="font-bold">Create Ticket</div>
 
-          <div className="space-y-4">
-            {tickets.map((t) => (
-              <div
-                key={t.ticketNumber}
-                onClick={() => setSelected(t.ticketNumber)}
-                className="p-4 border border-white/10 rounded cursor-pointer hover:bg-white/5"
-              >
-                <div className="font-semibold">{t.subject}</div>
-                <div className="text-xs text-white/50">
-                  {t.ticketNumber} • {t.status}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
+        <input
+          value={subject}
+          onChange={(e) => setSubject(e.target.value)}
+          placeholder="Subject (e.g. Refund request / Change dates / Payment issue)"
+          className="border rounded-xl px-3 py-2 w-full"
+        />
 
-        <div>
-          {activeTicket && (
-            <div>
-              <h2 className="text-2xl font-black mb-4">
-                {activeTicket.subject}
-              </h2>
+        <textarea
+          value={message}
+          onChange={(e) => setMessage(e.target.value)}
+          placeholder="Describe your issue..."
+          className="border rounded-xl px-3 py-2 w-full min-h-[120px]"
+        />
 
-              <div className="space-y-3 mb-6">
-                {activeTicket.messages.map((m, idx) => (
-                  <div
-                    key={idx}
-                    className={`p-3 rounded ${
-                      m.sender === "admin"
-                        ? "bg-blue-600/20"
-                        : "bg-white/10"
-                    }`}
-                  >
-                    <div className="text-xs text-white/50">
-                      {m.sender} •{" "}
-                      {new Date(m.date).toLocaleString()}
-                    </div>
-                    <div>{m.text}</div>
-                  </div>
-                ))}
-              </div>
+        <div className="flex items-center gap-3 flex-wrap">
+          <select
+            className="border rounded-xl px-3 py-2"
+            value={priority}
+            onChange={(e) => setPriority(e.target.value as any)}
+          >
+            <option value="low">Low</option>
+            <option value="normal">Normal</option>
+            <option value="high">High</option>
+            <option value="urgent">Urgent</option>
+          </select>
 
-              <AdminReplyBox
-                onSend={(text, status) =>
-                  adminReply(
-                    activeTicket.ticketNumber,
-                    text,
-                    status
-                  )
-                }
-              />
-            </div>
-          )}
+          <Button
+            onClick={() => createMut.mutate()}
+            disabled={createMut.isPending || !subject.trim() || !message.trim()}
+          >
+            {createMut.isPending ? "Creating..." : "Submit Ticket"}
+          </Button>
         </div>
       </div>
-    </div>
-  );
-}
 
-function AdminReplyBox({
-  onSend,
-}: {
-  onSend: (text: string, status: string) => void;
-}) {
-  const [text, setText] = useState("");
+      <div className="space-y-3">
+        <div className="font-bold">My Tickets</div>
 
-  return (
-    <div className="space-y-3">
-      <textarea
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-        className="w-full p-3 bg-black border border-white/20 rounded"
-        placeholder="Reply..."
-      />
+        {ticketsQ.isLoading && <div>Loading...</div>}
 
-      <div className="flex gap-3">
-        <button
-          onClick={() => {
-            onSend(text, "Answered");
-            setText("");
-          }}
-          className="bg-green-600 px-4 py-2 rounded"
-        >
-          Reply
-        </button>
+        {(ticketsQ.data || []).map((t: any) => (
+          <div key={t.id} className="border rounded-2xl p-5 bg-white">
+            <div className="flex items-start justify-between gap-4 flex-wrap">
+              <div>
+                <div className="font-bold">#{t.id} — {t.subject}</div>
+                <div className="text-sm text-black/50">
+                  Priority: {t.priority} • Status: {t.status}
+                </div>
+              </div>
+              <div className="text-xs text-black/40">
+                Updated: {String(t.updated_at || t.created_at).slice(0, 19).replace("T", " ")}
+              </div>
+            </div>
+          </div>
+        ))}
 
-        <button
-          onClick={() => onSend(text, "Closed")}
-          className="bg-red-600 px-4 py-2 rounded"
-        >
-          Close
-        </button>
+        {!ticketsQ.isLoading && !(ticketsQ.data || []).length && (
+          <div className="text-sm text-black/50">No tickets yet.</div>
+        )}
       </div>
     </div>
   );

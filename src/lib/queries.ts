@@ -1,11 +1,25 @@
 import { useQuery } from "@tanstack/react-query";
-import { fetchCars } from "./api";
+import { fetchCars, fetchCarBookedRanges, fetchMe } from "./api";
 
 export function useCarsQuery() {
   return useQuery({
     queryKey: ["cars"],
     queryFn: fetchCars,
-    staleTime: 60_000,
-    retry: 1
+  });
+}
+
+export function useCarBookedRangesQuery(carId: number | null) {
+  return useQuery({
+    queryKey: ["car-booked-ranges", carId],
+    queryFn: () => fetchCarBookedRanges(Number(carId)),
+    enabled: !!carId,
+  });
+}
+
+export function useMeQuery(enabled: boolean) {
+  return useQuery({
+    queryKey: ["me"],
+    queryFn: fetchMe,
+    enabled,
   });
 }
