@@ -1,85 +1,148 @@
 const express = require("express");
-const router = express.Router();
+const passport = require("passport");
 const pool = require("../db");
-const authMiddleware = require("../middleware/auth.middleware");
 
-// CREATE BOOKING (PROTECTED)
-router.post("/", authMiddleware, async (req, res) => {
-  try {
-    const { car_id, start_datetime, end_datetime } = req.body;
+const router = express.Router();
+const auth = passport.authenticate("jwt", { session: false });
 
-    const customer_id = req.user.id;
+function toMysqlDateTime(value) {
+const d = new Date(value);
+if (Number.isNaN(d.getTime())) return null;
+return d.toISOString().slice(0, 19).replace("T", " ");
+}
 
-    if (!car_id || !start_datetime || !end_datetime) {
-      return res.status(400).json({ error: "Missing required fields" });
-    }
+function diffDaysInclusiveCeil(start, end) {
+const ms = end.getTime() - start.getTime();
+const days = Math.ceil(ms / (1000 * 60 * 60 * 24));
+return Math.max(days, 1);
+}
 
-    const start = new Date(start_datetime);
-    const end = new Date(end_datetime);
+router.post("/", auth, async (req, res) => {
+const conn = await pool.getConnection();
 
-    const days = Math.ceil((end - start) / (1000 * 60 * 60 * 24));
+try {
+const userId = req.user.id;
 
-    if (days <= 0) {
-      return res.status(400).json({ error: "Invalid dates" });
-    }
+const {
+  car_id,
+  start_datetime,
+  end_datetime,
+  addons = [],
+  coupon_discount = 0,
+  loyalty_discount = 0,
+} = req.body || {};
 
-    // CHECK CAR EXISTS
-    const [carRows] = await pool.query(
-      "SELECT daily_price FROM cars WHERE id = ?",
-      [car_id]
-    );
+if (!car_id || !start_datetime || !end_datetime) {
+  return res.status(400).json({ error: "Missing booking fields" });
+}
 
-    if (!carRows.length) {
-      return res.status(404).json({ error: "Car not found" });
-    }
+const start = new Date(start_datetime);
+const end = new Date(end_datetime);
 
-    const dailyPrice = carRows[0].daily_price;
+if (end <= start) {
+  return res.status(400).json({ error: "Invalid booking dates" });
+}
 
-    // CHECK AVAILABILITY
-    const [existing] = await pool.query(
-      `SELECT id FROM bookings 
-       WHERE car_id = ?
-       AND (
-         (start_datetime <= ? AND end_datetime > ?)
-         OR
-         (start_datetime < ? AND end_datetime >= ?)
-       )`,
-      [car_id, start, start, end, end]
-    );
+const startSql = toMysqlDateTime(start_datetime);
+const endSql = toMysqlDateTime(end_datetime);
 
-    if (existing.length > 0) {
-      return res.status(400).json({ error: "Car already booked" });
-    }
+const [[car]] = await conn.query(
+  "SELECT id, daily_price FROM cars WHERE id=?",
+  [car_id]
+);
 
-    const totalPrice = dailyPrice * days;
+if (!car) {
+  return res.status(404).json({ error: "Car not found" });
+}
 
-    await pool.query(
-      `INSERT INTO bookings
-      (customer_id, car_id, start_datetime, end_datetime, total_price)
-      VALUES (?, ?, ?, ?, ?)`,
-      [customer_id, car_id, start, end, totalPrice]
-    );
+const [conflicts] = await conn.query(
+  `
+  SELECT id
+  FROM bookings
+  WHERE car_id = ?
+  AND status IN ('pending','confirmed')
+  AND NOT (
+    end_datetime <= ?
+    OR start_datetime >= ?
+  )
+  LIMIT 1
+  `,
+  [car_id, startSql, endSql]
+);
 
-    res.status(201).json({
-      message: "Booking created successfully"
-    });
+if (conflicts.length) {
+  return res.status(409).json({ error: "Car already booked for those dates" });
+}
 
-  } catch (error) {
-    console.error("BOOKING ERROR:", error);
-    res.status(500).json({ error: "Failed to create booking" });
-  }
-});
+const days = diffDaysInclusiveCeil(start, end);
 
-// GET ALL BOOKINGS
-router.get("/", authMiddleware, async (req, res) => {
-  try {
-    const [rows] = await pool.query(
-      "SELECT * FROM bookings ORDER BY id DESC"
-    );
-    res.json(rows);
-  } catch (error) {
-    res.status(500).json({ error: "Failed to fetch bookings" });
-  }
+const basePrice = Number(car.daily_price || 0) * days;
+
+const finalPrice =
+  basePrice - Number(coupon_discount || 0) - Number(loyalty_discount || 0);
+
+const [result] = await conn.query(
+  `
+  INSERT INTO bookings (
+    user_id,
+    customer_id,
+    car_id,
+    start_date,
+    end_date,
+    start_datetime,
+    end_datetime,
+    status,
+    payment_status,
+    deposit_amount,
+    paid_amount,
+    payment_method,
+    total_price,
+    base_price,
+    final_price,
+    addons_json,
+    coupon_discount,
+    loyalty_discount,
+    created_at,
+    updated_at
+  )
+  VALUES (
+    ?, ?, ?, DATE(?), DATE(?),
+    ?, ?, 'pending', 'unpaid',
+    0,0,NULL,
+    ?,?,?,?, ?,?,
+    NOW(),NOW()
+  )
+  `,
+  [
+    userId,
+    userId,
+    car_id,
+    startSql,
+    endSql,
+    startSql,
+    endSql,
+    finalPrice,
+    basePrice,
+    finalPrice,
+    JSON.stringify(addons),
+    coupon_discount,
+    loyalty_discount,
+  ]
+);
+
+const [[booking]] = await conn.query(
+  "SELECT * FROM bookings WHERE id=?",
+  [result.insertId]
+);
+
+res.status(201).json(booking);
+
+} catch (err) {
+console.error(err);
+res.status(500).json({ error: "Booking failed" });
+} finally {
+conn.release();
+}
 });
 
 module.exports = router;

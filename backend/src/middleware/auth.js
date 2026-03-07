@@ -12,10 +12,14 @@ module.exports = function (req, res, next) {
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
+    if (!decoded.id) {
+      return res.status(401).json({ error: "Invalid token payload" });
+    }
+
     req.user = {
-      id: decoded.userId,
+      id: decoded.id,
       email: decoded.email,
-      role: decoded.role
+      role: decoded.role,
     };
 
     next();
